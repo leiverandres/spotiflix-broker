@@ -1,0 +1,11 @@
+{
+  "name": "spotyflix-broker",
+  "version": "0.0.1",
+  "description": "An broker server for spotyflix project",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Leiver Andres Campeón <leiverandres04p@hotmail.con>",
+  "license": "MIT"
+}
