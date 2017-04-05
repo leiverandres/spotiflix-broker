@@ -4,8 +4,16 @@
   "description": "An broker server for spotyflix project",
   "main": "index.js",
   "scripts": {
+    "start-dev": "PORT=8080 DEBUG=* nodemon index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Leiver Andres Campeón <leiverandres04p@hotmail.con>",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "socket.io": "^1.7.3",
+    "socket.io-client": "^1.7.3"
+  },
+  "devDependencies": {
+    "nodemon": "^1.11.0"
+  }
 }
