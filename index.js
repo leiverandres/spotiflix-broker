@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 const PriorityQueue = require('updatable-priority-queue');
 const io = require('socket.io')(process.env.PORT);
 const utils = require('./brokerUtils');
@@ -6,13 +5,6 @@ const jsonfile = require('jsonfile');
 
 const dbName = 'DB.json';
 const serverQueue = new PriorityQueue();
-let numServers = 0; // Current amount of servers connected
-const serverIndices = {}; // store id for a server, by key=ip_address:port
-const serverDirs = {}; // store ip_address:port for a server, by key=id
-
-function increaseNumServers() {
-  numServers += 1;
-}
 
 // Init database
 jsonfile.spaces = 2;
@@ -21,66 +13,77 @@ jsonfile.writeFile(dbName, { files: {} }, err => {
   console.log('DB initialized');
 });
 
-// eslint-disable-next-line no-undef
 io.on('connection', socket => {
   console.info(`socket connected, ID: ${socket.id}`);
 
   // events with servers
-  socket.on('register-server', serverData => {
-    const dir = serverData.dir;
+  socket.on('register_server', serverData => {
+    const serverDir = serverData.dir;
     const diskSpace = serverData.disk;
     const priority = utils.getServerPriority(0, diskSpace);
-    serverQueue(numServers, priority);
-    serverDirs[numServers] = dir;
-    serverIndices[dir] = numServers;
+    serverQueue(serverDir, priority);
 
-    increaseNumServers();
     socket.emit('register-server', { res: 'OK' });
   });
 
-  socket.on('update-server', serverData => {
-    const dir = serverData.dir;
+  socket.on('update_server', serverData => {
+    const serverDir = serverData.dir;
     const diskSpace = serverData.disk;
     const load = serverData.load;
     const newPriority = utils.getServerPriority(load, diskSpace);
-    serverQueue.updateKey(serverIndices[dir], newPriority);
+    serverQueue.updateKey(serverDir, newPriority);
   });
 
   // events with client
-  socket.on('list-files', () => {
+  socket.on('list_files', () => {
     jsonfile.readFile(dbName, (err, db) => {
-      if (err) console.err(err);
-      const filenames = Object.keys(db.files);
-      const res = {
-        res: 'OK',
-        data: filenames
-      };
+      const res = {};
+      if (err) {
+        console.err(`[list] Error getting the db: ${err}`);
+        res.res = 'FAILED';
+      } else {
+        const filenames = Object.keys(db.files);
+        res.res = 'OK';
+        res.files = filenames;
+      }
       socket.emit('list-files', res);
     });
   });
 
-  socket.on('get-file' () => {
-    // TODO
-  });
-
-  socket.on('save-file' () => {
-    // TODO
-  });
-
-  socket.on('remove-file' (req) => {
-    const filename = req.filename;
+  socket.on('download_getServer', fileData => {
+    const filename = fileData.filename;
     jsonfile.readFile(dbName, (err, db) => {
-      if (err) console.err(err);
-      const serversToRemove = db.files[filename];
-      delete db.files[filename];
-      jsonfile.writeFile(dbName, db, (err) => {
-        if (err) console.err('Error writing db', err);
-        console.log('DB Updated');
-      });
-      const res = {
-        res: 'OK',
-        data: servers
-      };
+      const res = {};
+      if (err) {
+        console.err(`[upload] Error getting the db ${err}`);
+        res.res = 'FAILED';
+      } else {
+        const server = db.files[filename];
+        res.res = 'OK';
+        res.server = server;
+      }
+      socket.emit('download_getServer', res);
+    });
+  });
+
+  socket.on('upload_getServer', fileData => {
+    const filename = fileData.filename;
+    const bestServer = serverQueue.peek();
+
+    jsonfile.readFile(dbName, (err, db) => {
+      const res = {};
+      if (err) {
+        console.err(`[upload] Error getting the db ${err}`);
+        res.res = 'FAILED';
+      } else {
+        db.files[filename] = bestServer;
+        res.res = 'OK';
+        res.server = bestServer;
+        jsonfile.writeFile(dbName, db, err => {
+          if (err) console.err(`[upload] Error updating the db ${err}`);
+          socket.emit('upload_getServer', res);
+        });
+      }
     });
   });
 
