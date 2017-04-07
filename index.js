@@ -3,40 +3,55 @@ const io = require('socket.io')(process.env.PORT);
 const utils = require('./brokerUtils');
 const jsonfile = require('jsonfile');
 
-const dbName = 'DB.json';
+const serverSocket = io.of('/server');
+const clientSocket = io.of('/client');
+
+const DB_NAME = 'DB.json';
 const serverQueue = new PriorityQueue();
 
 // Init database
 jsonfile.spaces = 2;
-jsonfile.writeFile(dbName, { files: {} }, err => {
-  if (err) console.err(err);
+jsonfile.writeFile(DB_NAME, { files: {} }, err => {
+  if (err) return console.err(err);
   console.log('DB initialized');
 });
 
-io.on('connection', socket => {
-  console.info(`socket connected, ID: ${socket.id}`);
+serverSocket.on('connection', wsServer => {
+  console.info(`Server socket connected, ID: ${wsServer.id}`);
 
-  // events with servers
-  socket.on('register_server', serverData => {
+  wsServer.on('register_server', serverData => {
     const serverDir = serverData.dir;
     const diskSpace = serverData.disk;
     const priority = utils.getServerPriority(0, diskSpace);
-    serverQueue(serverDir, priority);
-
-    socket.emit('register-server', { res: 'OK' });
+    serverQueue.insert(serverDir, priority);
+    wsServer.dir = serverDir;
+    serverSocket.emit('register_server');
   });
 
-  socket.on('update_server', serverData => {
+  wsServer.on('update_server', serverData => {
     const serverDir = serverData.dir;
     const diskSpace = serverData.disk;
     const load = serverData.load;
     const newPriority = utils.getServerPriority(load, diskSpace);
     serverQueue.updateKey(serverDir, newPriority);
+    serverSocket.emit('update_server');
   });
 
-  // events with client
-  socket.on('list_files', () => {
-    jsonfile.readFile(dbName, (err, db) => {
+  wsServer.on('disconnect', () => {
+    console.log(`Server socket at ${wsServer.dir} has disconnected`);
+    // Put MAX_SAFE_INTEGER in order that this socket is never taken
+    serverQueue.updateKey(wsServer.dir, Number.MAX_SAFE_INTEGER);
+  });
+});
+
+// ############################################################################
+
+clientSocket.on('connection', wsClient => {
+  console.info(`Client socket connected, ID: ${wsClient.id}`);
+
+  wsClient.on('list_files', () => {
+    console.log('List files asked');
+    jsonfile.readFile(DB_NAME, (err, db) => {
       const res = {};
       if (err) {
         console.err(`[list] Error getting the db: ${err}`);
@@ -46,13 +61,14 @@ io.on('connection', socket => {
         res.res = 'OK';
         res.files = filenames;
       }
-      socket.emit('list-files', res);
+      clientSocket.emit('list_files', res);
     });
   });
 
-  socket.on('download_getServer', fileData => {
+  wsClient.on('download_getServer', fileData => {
+    console.log('download files asked');
     const filename = fileData.filename;
-    jsonfile.readFile(dbName, (err, db) => {
+    jsonfile.readFile(DB_NAME, (err, db) => {
       const res = {};
       if (err) {
         console.err(`[upload] Error getting the db ${err}`);
@@ -62,15 +78,16 @@ io.on('connection', socket => {
         res.res = 'OK';
         res.server = server;
       }
-      socket.emit('download_getServer', res);
+      clientSocket.emit('download_getServer', res);
     });
   });
 
-  socket.on('upload_getServer', fileData => {
+  wsClient.on('upload_getServer', fileData => {
+    console.log('upload files asked');
     const filename = fileData.filename;
     const bestServer = serverQueue.peek();
 
-    jsonfile.readFile(dbName, (err, db) => {
+    jsonfile.readFile(DB_NAME, (err, db) => {
       const res = {};
       if (err) {
         console.err(`[upload] Error getting the db ${err}`);
@@ -79,15 +96,15 @@ io.on('connection', socket => {
         db.files[filename] = bestServer;
         res.res = 'OK';
         res.server = bestServer;
-        jsonfile.writeFile(dbName, db, err => {
+        jsonfile.writeFile(DB_NAME, db, err => {
           if (err) console.err(`[upload] Error updating the db ${err}`);
-          socket.emit('upload_getServer', res);
+          clientSocket.emit('upload_getServer', res);
         });
       }
     });
   });
 
-  socket.on('disconnect', () => {
-    console.log('Socket has disconnected');
+  wsClient.on('disconnect', () => {
+    console.log('Client socket has disconnected');
   });
 });
