@@ -4,8 +4,8 @@
   "description": "An broker server for spotyflix project",
   "main": "index.js",
   "scripts": {
-    "start" : "PORT=8080 node index.js",
-    "start-debug": "PORT=8080 DEBUG=* node index.js",
+    "start" : "node index.js",
+    "start-debug": "DEBUG=* node index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Leiver Andres Campeón <leiverandres04p@hotmail.con>",

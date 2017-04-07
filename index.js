@@ -1,5 +1,5 @@
 const PriorityQueue = require('updatable-priority-queue');
-const io = require('socket.io')(process.env.PORT);
+const io = require('socket.io')(process.env.PORT || '8080');
 const utils = require('./brokerUtils');
 const jsonfile = require('jsonfile');
 
@@ -11,9 +11,15 @@ const serverQueue = new PriorityQueue();
 
 // Init database
 jsonfile.spaces = 2;
-jsonfile.writeFile(DB_NAME, { files: {} }, err => {
-  if (err) return console.err(err);
-  console.log('DB initialized');
+jsonfile.readFile(DB_NAME, (err, data) => {
+  if (err) {
+    jsonfile.writeFile(DB_NAME, { files: {} }, err => {
+      if (err) {
+        return console.error(err);
+      }
+      console.log('DB initialized');
+    });
+  }
 });
 
 serverSocket.on('connection', wsServer => {
@@ -45,61 +51,73 @@ serverSocket.on('connection', wsServer => {
 });
 
 // ############################################################################
+function listFiles(wsClient) {
+  jsonfile.readFile(DB_NAME, (err, db) => {
+    const res = {};
+    if (err) {
+      console.error(`[list] Error getting the db: ${err}`);
+      res.status = false;
+    } else {
+      const filenames = Object.keys(db.files);
+      res.status = true;
+      res.files = filenames;
+    }
+    wsClient.emit('list_files', res);
+  });
+}
 
 clientSocket.on('connection', wsClient => {
   console.info(`Client socket connected, ID: ${wsClient.id}`);
 
   wsClient.on('list_files', () => {
-    console.log('List files asked');
-    jsonfile.readFile(DB_NAME, (err, db) => {
-      const res = {};
-      if (err) {
-        console.err(`[list] Error getting the db: ${err}`);
-        res.res = 'FAILED';
-      } else {
-        const filenames = Object.keys(db.files);
-        res.res = 'OK';
-        res.files = filenames;
-      }
-      clientSocket.emit('list_files', res);
-    });
+    console.log('List files asked', wsClient.id);
+    listFiles(wsClient);
   });
 
   wsClient.on('download_getServer', fileData => {
-    console.log('download files asked');
+    console.log('Download files asked', wsClient.id);
     const filename = fileData.filename;
     jsonfile.readFile(DB_NAME, (err, db) => {
       const res = {};
       if (err) {
-        console.err(`[upload] Error getting the db ${err}`);
-        res.res = 'FAILED';
+        console.error(`[upload] Error getting the db ${err}`);
+        res.status = false;
       } else {
         const server = db.files[filename];
-        res.res = 'OK';
+        res.status = true;
         res.server = server;
       }
-      clientSocket.emit('download_getServer', res);
+      wsClient.emit('download_getServer', res);
     });
   });
 
   wsClient.on('upload_getServer', fileData => {
-    console.log('upload files asked');
+    console.log('Upload files asked', wsClient.id);
     const filename = fileData.filename;
-    const bestServer = serverQueue.peek();
+    const bestServer = serverQueue.peek().item;
 
     jsonfile.readFile(DB_NAME, (err, db) => {
-      const res = {};
+      let res = { status: false };
       if (err) {
-        console.err(`[upload] Error getting the db ${err}`);
-        res.res = 'FAILED';
+        console.error(`[upload] Error getting the db ${err}`);
+        res.message = 'Error getting the db';
+        wsClient.emit('upload_getServer', res);
       } else {
-        db.files[filename] = bestServer;
-        res.res = 'OK';
-        res.server = bestServer;
-        jsonfile.writeFile(DB_NAME, db, err => {
-          if (err) console.err(`[upload] Error updating the db ${err}`);
-          clientSocket.emit('upload_getServer', res);
-        });
+        if (!db.files[filename]) {
+          db.files[filename] = bestServer;
+          res.status = true;
+          res.server = bestServer;
+          console.log(res);
+          jsonfile.writeFile(DB_NAME, db, err => {
+            if (err) {
+              console.error(`[upload] Error updating the db ${err}`);
+            }
+            wsClient.emit('upload_getServer', res);
+          });
+        } else {
+          res.message = 'File exists';
+          wsClient.emit('upload_getServer', res);
+        }
       }
     });
   });
