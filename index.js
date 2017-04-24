@@ -75,8 +75,8 @@ clientSocket.on('connection', wsClient => {
   });
 
   wsClient.on('download_getServer', fileData => {
-    console.log('Download files asked', wsClient.id);
     const filename = fileData.filename;
+    console.log(`Download ${filename} asked by: ${wsClient.id}`);
     jsonfile.readFile(DB_NAME, (err, db) => {
       const res = {};
       if (err) {
@@ -86,14 +86,15 @@ clientSocket.on('connection', wsClient => {
         const server = db.files[filename];
         res.status = true;
         res.server = server;
+        console.log(`${filename} is in server: ${server}`);
       }
       wsClient.emit('download_getServer', res);
     });
   });
 
   wsClient.on('upload_getServer', fileData => {
-    console.log('Upload files asked', wsClient.id);
     const filename = fileData.filename;
+    console.log(`Upload ${filename} asked by: ${wsClient.id}`);
     const bestServer = serverQueue.peek().item;
 
     jsonfile.readFile(DB_NAME, (err, db) => {
@@ -107,7 +108,7 @@ clientSocket.on('connection', wsClient => {
           db.files[filename] = bestServer;
           res.status = true;
           res.server = bestServer;
-          console.log(res);
+          console.log(`${filename} saved in server: ${bestServer}`);
           jsonfile.writeFile(DB_NAME, db, err => {
             if (err) {
               console.error(`[upload] Error updating the db ${err}`);
