@@ -1,10 +1,15 @@
 const PriorityQueue = require('updatable-priority-queue');
-const io = require('socket.io')(process.env.PORT || '8080');
+const socket_io = require('socket.io');
 const utils = require('./brokerUtils');
 const jsonfile = require('jsonfile');
 
+const port = process.env.PORT || '8080';
+
+const io = socket_io(port);
 const serverSocket = io.of('/server');
 const clientSocket = io.of('/client');
+
+console.log(`Listening on ${port}`);
 
 const DB_NAME = 'DB.json';
 const serverQueue = new PriorityQueue();
@@ -41,6 +46,22 @@ serverSocket.on('connection', wsServer => {
     const newPriority = utils.getServerPriority(load, diskSpace);
     serverQueue.updateKey(serverDir, newPriority);
     serverSocket.emit('update_server');
+  });
+
+  wsServer.on('upload_end', serverData => {
+    const filename = serverData.filename;
+    const server = serverData.server;
+    jsonfile.readFile(DB_NAME, (err, db) => {
+      db.files[filename] = server;
+      jsonfile.writeFile(DB_NAME, db, err => {
+        if (err) {
+          console.error(`Error updating the db ${err}`);
+        } else {
+          console.log(`Saved ${filename} in server: ${server}`);
+          listFiles(clientSocket);
+        }
+      });
+    });
   });
 
   wsServer.on('disconnect', () => {
@@ -105,16 +126,9 @@ clientSocket.on('connection', wsClient => {
         wsClient.emit('upload_getServer', res);
       } else {
         if (!db.files[filename]) {
-          db.files[filename] = bestServer;
           res.status = true;
           res.server = bestServer;
-          console.log(`${filename} saved in server: ${bestServer}`);
-          jsonfile.writeFile(DB_NAME, db, err => {
-            if (err) {
-              console.error(`[upload] Error updating the db ${err}`);
-            }
-            wsClient.emit('upload_getServer', res);
-          });
+          wsClient.emit('upload_getServer', res);
         } else {
           res.message = 'File exists';
           wsClient.emit('upload_getServer', res);
